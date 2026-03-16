@@ -167,13 +167,8 @@ async def telegram_webhook(request: Request):
 @app.get("/")
 async def root():
 
-    stats = check_remaining_requests()
 
-    used = stats.get("used", 0)
-    remaining = stats.get("remaining", 0)
 
     return {
-        "status": "active",
-        "used_today": used,
-        "remaining": remaining
+        "status": "active"
     }
