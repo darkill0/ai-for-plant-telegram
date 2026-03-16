@@ -2,14 +2,21 @@ import requests
 import json
 import time
 import logging
+import os
+
 
 logger = logging.getLogger(__name__)
 
 # ПРОВЕРЬТЕ: API ключ должен быть в правильном формате
 # Для OpenRouter API ключи обычно начинаются с "sk-or-v1-"
-OPENROUTER_API_KEY = "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"
+
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+
+if not OPENROUTER_API_KEY:
+    raise ValueError("Переменная окружения OPENROUTER_API_KEY не установлена")
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "google/gemma-3n-e2b-it:free"
+OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
 def get_plant_advice(plant_name):
     """
