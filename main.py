@@ -2,12 +2,14 @@ import os
 import logging
 from pathlib import Path
 import tempfile
-from fastapi import FastAPI, Request, HTTPException
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from aiogram import Bot, Dispatcher, Router, types
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from contextlib import asynccontextmanager
+
 from config import TELEGRAM_TOKEN
 from plant_recognition import recognize_plant, check_remaining_requests
 from ai_advice import get_plant_advice
@@ -67,8 +69,6 @@ async def message_handler(message: Message):
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
 
-app = FastAPI(lifespan=lifespan)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{BASE_WEBHOOK_PATH}"
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
     yield
     await bot.delete_webhook(drop_pending_updates=True)
 
-app.mount(BASE_WEBHOOK_PATH, handler)
+app = FastAPI(lifespan=lifespan)
 
 handler = SimpleRequestHandler(
     dispatcher=dp,
@@ -89,6 +89,8 @@ handler = SimpleRequestHandler(
 )
 
 setup_application(app, dp, bot=bot)
+
+app.mount(BASE_WEBHOOK_PATH, handler)
 
 @app.get("/")
 async def root():
