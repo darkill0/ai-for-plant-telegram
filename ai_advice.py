@@ -2,11 +2,13 @@
 import requests
 import json
 import time
-from config import OPENROUTER_API_KEY, OPENROUTER_URL, OPENROUTER_MODEL
 import logging
 
 logger = logging.getLogger(__name__)
 
+OPENROUTER_API_KEY =  "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"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODEL = "google/gemma-3n-e2b-it:free"
 def get_plant_advice(plant_name):
     """
     Получает советы по уходу за растением через OpenRouter API

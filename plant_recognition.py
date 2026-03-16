@@ -3,9 +3,11 @@ import requests
 import json
 import os
 import time
-from config import PLANT_ID_API_KEY, PLANT_ID_URL
+
 import logging
 from pathlib import Path
+PLANT_ID_URL = "https://api.plant.id/v2/identify"
+PLANT_ID_API_KEY =  "kQyHiDnUA8TbpdXrkY1OWk7Kx2HqZmrCffYyMT4V6PSh24Lyp2"
 
 logger = logging.getLogger(__name__)
 
