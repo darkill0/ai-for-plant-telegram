@@ -1,14 +1,14 @@
 import os
 import logging
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from aiogram import Bot, Dispatcher, Router, types
+from fastapi import FastAPI, Request, HTTPException
+
+from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import CommandStart
-from aiogram.types import Message
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.types import Message, Update
 
 from config import TELEGRAM_TOKEN
 from plant_recognition import recognize_plant, check_remaining_requests
@@ -18,10 +18,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+
 logger = logging.getLogger(__name__)
 
 BASE_WEBHOOK_PATH = f"/webhook/{TELEGRAM_TOKEN}"
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-very-long-random-secret-string")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-secret")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -31,72 +32,104 @@ dp.include_router(router)
 TEMP_DIR = Path("/tmp/plant_bot")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
+
 @router.message(CommandStart())
 async def start_handler(message: Message):
     text = "🌿 Бот для растений\nОтправьте фото растения\nили название растения"
     await message.answer(text)
 
+
 @router.message()
 async def message_handler(message: Message):
+
     if message.text:
         plant = message.text.strip()
         await message.answer(f"Ищу информацию о {plant}")
+
         advice = get_plant_advice(plant)
+
         await message.answer(advice)
         return
 
     if message.photo:
+
         msg = await message.answer("Анализирую фото...")
         temp_path = None
+
         try:
             photo = message.photo[-1]
+
             with tempfile.NamedTemporaryFile(dir=TEMP_DIR, suffix=".jpg", delete=False) as tmp:
                 temp_path = tmp.name
+
             await photo.download(destination=temp_path)
 
             result = recognize_plant(temp_path)
+
             plant = result.get("name", "Неизвестно")
             probability = result.get("probability", 0)
+
             text = f"Растение: {plant}\nТочность: {round(probability * 100)}%"
+
             await msg.edit_text(text)
 
             advice = get_plant_advice(plant)
+
             await message.answer(advice)
+
         except Exception as e:
+
             logger.error(f"Ошибка обработки фото: {e}")
             await msg.edit_text("Ошибка анализа фото")
+
         finally:
+
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{BASE_WEBHOOK_PATH}"
+
     await bot.set_webhook(
         url=webhook_url,
         secret_token=WEBHOOK_SECRET,
         drop_pending_updates=True
     )
+
     yield
+
     await bot.delete_webhook(drop_pending_updates=True)
+
 
 app = FastAPI(lifespan=lifespan)
 
-handler = SimpleRequestHandler(
-    dispatcher=dp,
-    bot=bot,
-    secret_token=WEBHOOK_SECRET
-)
 
-setup_application(app, dp, bot=bot)
+@app.post(BASE_WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
 
-app.mount(BASE_WEBHOOK_PATH, handler)
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:
+        raise HTTPException(status_code=403)
+
+    data = await request.json()
+
+    update = Update.model_validate(data)
+
+    await dp.feed_update(bot, update)
+
+    return {"ok": True}
+
 
 @app.get("/")
 async def root():
+
     stats = check_remaining_requests()
+
     used = stats.get("used", 0)
     remaining = stats.get("remaining", 0)
+
     return {
         "status": "active",
         "used_today": used,
