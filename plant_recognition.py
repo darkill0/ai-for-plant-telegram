@@ -7,7 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-PLANT_ID_URL = "https://api.kindwise.com/v1/identification"  # актуальный эндпоинт v3 по состоянию на 2026
+PLANT_ID_URL = "https://api.plant.id/v3/identification"
 PLANT_ID_API_KEY = "kQyHiDnUA8TbpdXrkY1OWk7Kx2HqZmrCffYyMT4V6PSh24Lyp2"
 
 request_count = 0
@@ -65,13 +65,13 @@ def recognize_plant(image_path):
             result = response.json()
             
             if result.get("result") and result["result"].get("is_plant") and result["result"].get("classification"):
-                suggestions = result["result"]["classification"]
+                suggestions = result["result"]["classification"]["suggestions"]
                 if suggestions:
                     best_match = suggestions[0]
                     plant_name = best_match.get("name", "Неизвестное растение")
-                    probability = best_match.get("score", 0)
+                    probability = best_match.get("probability", 0)
                     
-                    common_names = best_match.get("details", {}).get("common_names", [])
+                    common_names = best_match.get("plant_details", {}).get("common_names", [])
                     
                     logger.info(f"Распознано: {plant_name} с вероятностью {probability:.2f}")
                     
@@ -103,3 +103,20 @@ def recognize_plant(image_path):
     except Exception as e:
         logger.error(f"Неожиданная ошибка: {e}")
         return {"name": f"Ошибка: {str(e)[:50]}", "probability": 0}
+
+def check_remaining_requests():
+    global request_count, last_reset_day
+    
+    current_day = time.strftime("%Y-%m-%d")
+    if current_day != last_reset_day:
+        request_count = 0
+        last_reset_day = current_day
+    
+    remaining = max(0, 100 - request_count)
+    logger.info(f"Использовано запросов сегодня: {request_count}, осталось: {remaining}")
+    
+    return {
+        "used": request_count,
+        "remaining": remaining,
+        "reset_day": current_day
+    }
