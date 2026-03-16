@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 # ПРОВЕРЬТЕ: API ключ должен быть в правильном формате
 # Для OpenRouter API ключи обычно начинаются с "sk-or-v1-"
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "google/gemma-3n-e2b-it:free"
 

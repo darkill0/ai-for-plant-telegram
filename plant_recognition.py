@@ -35,17 +35,12 @@ def recognize_plant(image_path):
             image_data = f.read()
             image_base64 = base64.b64encode(image_data).decode("utf-8")
         
-        # ИСПРАВЛЕНО: убираем неподдерживаемые modifiers
+        # ИСПРАВЛЕНО: используем правильные параметры для v3 API
         payload = {
             "images": [image_base64],
-            # "modifiers": ["crops_fast", "similar_images"],  # УДАЛЕНО - эти модификаторы не поддерживаются
             "plant_language": "ru",
             "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
         }
-        
-        # Альтернативный вариант с поддерживаемыми modifiers
-        # Если нужна обрезка изображения, можно использовать:
-        # "modifiers": ["crops_simple"]  # или просто убрать modifiers совсем
         
         headers = {
             "Api-Key": PLANT_ID_API_KEY,
@@ -72,11 +67,13 @@ def recognize_plant(image_path):
             # Логируем полный ответ для отладки
             logger.debug(f"Полный ответ API: {result}")
             
-            # Проверяем структуру ответа (может отличаться в v3)
+            # Правильная обработка ответа v3 API
             if result.get("result"):
-                # Новая структура для v3 API
-                if result["result"].get("is_plant") and result["result"].get("classification"):
-                    suggestions = result["result"]["classification"]["suggestions"]
+                # Проверяем, является ли объект растением
+                if result["result"].get("is_plant", {}).get("binary", False):
+                    classification = result["result"].get("classification", {})
+                    suggestions = classification.get("suggestions", [])
+                    
                     if suggestions:
                         best_match = suggestions[0]
                         plant_name = best_match.get("name", "Неизвестное растение")
@@ -85,16 +82,24 @@ def recognize_plant(image_path):
                         plant_details = best_match.get("plant_details", {})
                         common_names = plant_details.get("common_names", [])
                         
+                        # Получаем URL изображения если есть
+                        image_url = None
+                        if result.get("images") and len(result["images"]) > 0:
+                            image_url = result["images"][0].get("url")
+                        
                         logger.info(f"Распознано: {plant_name} с вероятностью {probability:.2f}")
                         
                         return {
                             "name": plant_name,
                             "probability": probability,
-                            "common_names": common_names[:5],
-                            "all_suggestions": [s.get("name", "") for s in suggestions[:3] if s.get("name")]
+                            "common_names": common_names[:5] if common_names else [],
+                            "all_suggestions": [s.get("name", "") for s in suggestions[:3] if s.get("name")],
+                            "image_url": image_url
                         }
+                else:
+                    logger.warning("На изображении не обнаружено растение")
+                    return {"name": "Не является растением", "probability": 0}
             else:
-                # Альтернативная структура ответа
                 logger.warning("Неожиданная структура ответа API")
                 return {"name": "Неизвестное растение", "probability": 0}
                 
@@ -102,9 +107,17 @@ def recognize_plant(image_path):
             return {"name": "Неизвестное растение", "probability": 0}
             
         elif response.status_code == 400:
-            logger.error(f"Ошибка запроса 400: {response.text}")
-            # Пробуем упрощенный запрос без лишних параметров
-            return try_simple_request(image_path)
+            error_text = response.text
+            logger.error(f"Ошибка запроса 400: {error_text}")
+            
+            # Проверяем специфичную ошибку с plant_language
+            if "plant_language" in error_text and "Available modifiers" in error_text:
+                logger.info("Обнаружена проблема с plant_language, пробуем без языковых параметров")
+                return try_without_language(image_path)
+            else:
+                # Пробуем упрощенный запрос без лишних параметров
+                return try_simple_request(image_path)
+                
         elif response.status_code == 401:
             logger.error(f"Ошибка аутентификации: {response.text}")
             return {"name": "Ошибка аутентификации API", "probability": 0}
@@ -125,8 +138,47 @@ def recognize_plant(image_path):
         logger.error(f"Неожиданная ошибка: {e}")
         return {"name": f"Ошибка: {str(e)[:50]}", "probability": 0}
 
+def try_without_language(image_path):
+    """Пробует запрос без параметра plant_language"""
+    try:
+        logger.info("Пробуем запрос без языковых параметров...")
+        
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+            image_base64 = base64.b64encode(image_data).decode("utf-8")
+        
+        # Запрос без plant_language
+        payload = {
+            "images": [image_base64],
+            "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
+        }
+        
+        headers = {
+            "Api-Key": PLANT_ID_API_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(
+            PLANT_ID_URL,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            request_count += 1
+            return parse_v3_response(result)
+        else:
+            logger.error(f"Ошибка в запросе без языка: {response.status_code}")
+            return try_simple_request(image_path)
+            
+    except Exception as e:
+        logger.error(f"Ошибка в запросе без языка: {e}")
+        return try_simple_request(image_path)
+
 def try_simple_request(image_path):
-    """Пробует отправить упрощенный запрос без дополнительных параметров"""
+    """Пробует отправить максимально упрощенный запрос"""
     try:
         logger.info("Пробуем упрощенный запрос...")
         
@@ -134,7 +186,7 @@ def try_simple_request(image_path):
             image_data = f.read()
             image_base64 = base64.b64encode(image_data).decode("utf-8")
         
-        # Максимально простой запрос
+        # Минимальный запрос
         payload = {
             "images": [image_base64]
         }
@@ -154,22 +206,45 @@ def try_simple_request(image_path):
         if response.status_code == 200:
             result = response.json()
             request_count += 1
-            
-            # Парсим результат (структура может отличаться)
-            if result.get("suggestions") and len(result["suggestions"]) > 0:
-                best = result["suggestions"][0]
-                return {
-                    "name": best.get("plant_name", "Неизвестное растение"),
-                    "probability": best.get("probability", 0),
-                    "common_names": [],
-                    "all_suggestions": []
-                }
-        
-        return {"name": "Не удалось распознать", "probability": 0}
+            return parse_v3_response(result)
+        else:
+            logger.error(f"Упрощенный запрос тоже не сработал: {response.status_code}")
+            return {"name": "Не удалось распознать", "probability": 0}
         
     except Exception as e:
         logger.error(f"Ошибка в упрощенном запросе: {e}")
         return {"name": "Ошибка распознавания", "probability": 0}
+
+def parse_v3_response(result):
+    """Парсит ответ v3 API в единый формат"""
+    try:
+        if result.get("result"):
+            if result["result"].get("is_plant", {}).get("binary", False):
+                classification = result["result"].get("classification", {})
+                suggestions = classification.get("suggestions", [])
+                
+                if suggestions:
+                    best_match = suggestions[0]
+                    plant_name = best_match.get("name", "Неизвестное растение")
+                    probability = best_match.get("probability", 0)
+                    
+                    plant_details = best_match.get("plant_details", {})
+                    common_names = plant_details.get("common_names", [])
+                    
+                    return {
+                        "name": plant_name,
+                        "probability": probability,
+                        "common_names": common_names[:5] if common_names else [],
+                        "all_suggestions": [s.get("name", "") for s in suggestions[:3] if s.get("name")]
+                    }
+            else:
+                return {"name": "Не является растением", "probability": 0}
+        
+        return {"name": "Неизвестное растение", "probability": 0}
+        
+    except Exception as e:
+        logger.error(f"Ошибка парсинга ответа: {e}")
+        return {"name": "Ошибка обработки", "probability": 0}
 
 def check_remaining_requests():
     global request_count, last_reset_day
