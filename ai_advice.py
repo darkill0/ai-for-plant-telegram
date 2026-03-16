@@ -16,7 +16,7 @@ if not OPENROUTER_API_KEY:
     raise ValueError("Переменная окружения OPENROUTER_API_KEY не установлена")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "openrouter/free"
+OPENROUTER_MODEL = "stepfun/step-3.5-flash:free"
 
 def get_plant_advice(plant_name):
     """
