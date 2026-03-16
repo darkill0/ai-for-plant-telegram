@@ -11,7 +11,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, Update
 
 from config import TELEGRAM_TOKEN
-from plant_recognition import recognize_plant, check_remaining_requests
+from plant_recognition import recognize_plant
 from ai_advice import get_plant_advice
 
 
