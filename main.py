@@ -131,19 +131,18 @@ async def lifespan(app: FastAPI):
         f"{BASE_WEBHOOK_PATH}"
     )
 
-    await bot.set_webhook(
-        url=webhook_url,
-        secret_token=WEBHOOK_SECRET,
-        drop_pending_updates=True
-    )
+    info = await bot.get_webhook_info()
 
-    logger.info(f"Webhook установлен: {webhook_url}")
+    if info.url != webhook_url:
+        await bot.set_webhook(
+            url=webhook_url,
+            secret_token=WEBHOOK_SECRET,
+            drop_pending_updates=True
+        )
+
+        logger.info(f"Webhook установлен: {webhook_url}")
 
     yield
-
-    await bot.delete_webhook(drop_pending_updates=True)
-
-    logger.info("Webhook удалён")
 
 
 app = FastAPI(lifespan=lifespan)
