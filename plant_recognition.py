@@ -12,7 +12,6 @@ PLANT_ID_API_KEY = "kQyHiDnUA8TbpdXrkY1OWk7Kx2HqZmrCffYyMT4V6PSh24Lyp2"
 request_count = 0
 last_reset_day = time.strftime("%Y-%m-%d")
 
-
 def recognize_plant(image_path):
     global request_count, last_reset_day
 
@@ -62,7 +61,43 @@ def recognize_plant(image_path):
         elapsed = time.time() - start
         logger.info(f"Ответ получен за {elapsed:.2f} с, код: {response.status_code}")
 
-        if response.status_code != 200:
+        if response.status_code == 201:
+            data = response.json()
+            access_token = data.get("access_token")
+            if not access_token:
+                logger.error("Отсутствует access_token в ответе 201")
+                return {"name": "Ошибка создания задачи", "probability": 0}
+
+            request_count += 1
+
+            # Поллинг результата
+            max_attempts = 20
+            attempt = 0
+            while attempt < max_attempts:
+                attempt += 1
+                time.sleep(4)  # интервал между запросами
+
+                result_response = requests.get(
+                    f"{PLANT_ID_URL}/{access_token}",
+                    headers=headers,
+                    timeout=15
+                )
+
+                if result_response.status_code == 200:
+                    result_data = result_response.json()
+                    break
+                elif result_response.status_code == 404 or result_response.status_code == 102:
+                    # 102 или аналогичный код ожидания обработки
+                    continue
+                else:
+                    logger.error(f"Ошибка получения результата: {result_response.status_code} {result_response.text[:150]}")
+                    return {"name": f"Ошибка получения результата {result_response.status_code}", "probability": 0}
+
+            else:
+                logger.warning("Превышено время ожидания результата")
+                return {"name": "Таймаут обработки", "probability": 0}
+
+        elif response.status_code != 200:
             if response.status_code == 400:
                 logger.error(f"Ошибка 400: {response.text.strip()}")
                 return try_minimal_request(image_path)
@@ -75,10 +110,11 @@ def recognize_plant(image_path):
             logger.error(f"Необработанная ошибка {response.status_code}: {response.text[:180]}")
             return {"name": f"Ошибка API {response.status_code}", "probability": 0}
 
-        request_count += 1
-        data = response.json()
+        else:
+            # редкий случай синхронного ответа
+            result_data = response.json()
 
-        result = data.get("result", {})
+        result = result_data.get("result", {})
         is_plant_prob = result.get("is_plant", {}).get("probability", 0)
 
         if is_plant_prob <= 0.5:
@@ -132,104 +168,3 @@ def recognize_plant(image_path):
     except Exception as e:
         logger.exception("Неожиданное исключение в recognize_plant")
         return {"name": "Системная ошибка распознавания", "probability": 0}
-
-
-def try_minimal_request(image_path):
-    try:
-        logger.info("Повторная попытка — минимальный запрос")
-
-        with open(image_path, "rb") as f:
-            image_base64 = base64.b64encode(f.read()).decode("utf-8")
-
-        payload = {"images": [image_base64]}
-        headers = {
-            "Api-Key": PLANT_ID_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        response = requests.post(
-            PLANT_ID_URL,
-            json=payload,
-            headers=headers,
-            timeout=25
-        )
-
-        if response.status_code != 200:
-            logger.error(f"Минимальный запрос завершился с кодом {response.status_code}")
-            return {"name": "Не удалось распознать", "probability": 0}
-
-        data = response.json()
-        request_count += 1  # глобальная переменная
-
-        result = data.get("result", {})
-        is_plant_prob = result.get("is_plant", {}).get("probability", 0)
-
-        if is_plant_prob <= 0.5:
-            return {
-                "name": "Не является растением",
-                "probability": 0,
-                "is_plant_probability": is_plant_prob
-            }
-
-        suggestions = result.get("classification", {}).get("suggestions", [])
-        if not suggestions:
-            return {"name": "Вид не определён", "probability": 0}
-
-        best = suggestions[0]
-        return {
-            "name": best.get("name", "Неизвестное растение"),
-            "probability": best.get("probability", 0),
-            "common_names": [],
-            "all_suggestions": [
-                s.get("name", "") for s in suggestions[:3] if s.get("name")
-            ],
-            "is_plant_probability": is_plant_prob
-        }
-
-    except Exception as e:
-        logger.error(f"Ошибка минимального запроса: {e}")
-        return {"name": "Ошибка распознавания", "probability": 0}
-
-
-def check_remaining_requests():
-    current_day = time.strftime("%Y-%m-%d")
-    if current_day != last_reset_day:
-        request_count = 0
-        last_reset_day = current_day
-
-    remaining = max(0, 100 - request_count)
-    logger.info(f"Запросов сегодня: {request_count} / 100")
-
-    return {
-        "used": request_count,
-        "remaining": remaining,
-        "reset_day": current_day,
-        "limit": 100
-    }
-
-
-def test_api_connection():
-    try:
-        payload = {"images": ["invalid_test_string"]}
-        headers = {
-            "Api-Key": PLANT_ID_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        r = requests.post(
-            PLANT_ID_URL,
-            json=payload,
-            headers=headers,
-            timeout=10
-        )
-
-        if r.status_code in (400, 401):
-            logger.info(f"API доступен (ожидаемый код {r.status_code})")
-            return r.status_code == 400
-
-        logger.info(f"Неожиданный код при тесте: {r.status_code}")
-        return r.status_code < 500
-
-    except Exception as e:
-        logger.error(f"Тест соединения завершился ошибкой: {e}")
-        return False
