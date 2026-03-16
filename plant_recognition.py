@@ -12,7 +12,7 @@ PLANT_ID_API_KEY = "kQyHiDnUA8TbpdXrkY1OWk7Kx2HqZmrCffYyMT4V6PSh24Lyp2"
 request_count = 0
 last_reset_day = time.strftime("%Y-%m-%d")
 
-def recognize_plant(image_path):
+def check_remaining_requests(image_path):
     global request_count, last_reset_day
 
     current_day = time.strftime("%Y-%m-%d")
