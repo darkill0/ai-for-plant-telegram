@@ -16,7 +16,7 @@ if not OPENROUTER_API_KEY:
     raise ValueError("Переменная окружения OPENROUTER_API_KEY не установлена")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
+OPENROUTER_MODEL = "google/gemma-3n-e2b-it:free"
 
 def get_plant_advice(plant_name):
     """
